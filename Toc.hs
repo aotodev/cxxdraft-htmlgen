@@ -11,7 +11,7 @@ import Data.Time.Clock (getCurrentTime, UTCTime)
 import Prelude hiding ((.), (++), writeFile)
 import LaTeXBase (LaTeXUnit(..))
 import Pages (Link(..), fileContent, applyPageStyle, PageStyle(..), outputDir, writePage)
-import Render (secnum, linkToSection, simpleRender2, RenderContext(..), render, defaultRenderContext, Page(..))
+import Render (secnum, linkToSection, RenderContext(..), render, defaultRenderContext, Page(..))
 import Util
 import Document (Section(..), Draft(..), SectionKind(..), indexCatName, showSectionKindInToc)
 
@@ -48,7 +48,7 @@ tocChapter draft expanded s@Section{abbreviation, sectionName, subsections, pare
 	  | otherwise =
 	      secnum 0 (if expanded then "#" ++ urlChars abbreviation else "") s ++ " " ++
 	      render (sectionName ++ [TeXRaw " "], link) ctx ++
-	      (if expanded then "" else simpleRender2 (linkToSection TocToSection abbreviation){aClass="unfolded_abbr_ref"})
+	      (if expanded then "" else render (linkToSection TocToSection abbreviation){aClass="unfolded_abbr_ref"} ctx)
 
 tocHeader :: UTCTime -> Text -> Text
 tocHeader date commitUrl =
@@ -60,6 +60,9 @@ tocHeader date commitUrl =
 	++ "<b>Note: this is an early draft. It's known to be incomplet and incorrekt, and it has lots of"
 	++ " b<span style='position:relative;left:-1.2pt'>a</span><span style='position:relative;left:1pt'>d</span>"
 	++ " for<span style='position:relative;left:-3pt'>matti<span style='position:relative;bottom:0.15ex'>n</span>g.</span></b>"
+
+indices :: [Text]
+indices = ["generalindex", "grammarindex", "headerindex", "libraryindex", "conceptindex", "impldefindex"]
 
 writeTocFiles :: PageStyle -> Draft -> IO ()
 writeTocFiles sfs draft@Draft{..} = do
@@ -75,8 +78,8 @@ writeTocFiles sfs draft@Draft{..} = do
 			"<br><h1>Contents</h1>" ++
 			mconcat (tocChapter draft False . chapters) ++
 			mconcat (h 2
-				. (\cat -> simpleRender2 anchor{aHref="TocToSection/" ++ cat, aText=indexCatName cat})
-				. ["generalindex", "grammarindex", "headerindex", "libraryindex", "conceptindex", "impldefindex"])
+				. (\cat -> render anchor{aHref="TocToSection/" ++ cat, aText=indexCatName cat} defaultRenderContext)
+				. indices)
 
 	fullTocCss <- readFile "fulltoc.css"
 	let
@@ -89,5 +92,5 @@ writeTocFiles sfs draft@Draft{..} = do
 			"<br><h1>Contents</h1>" ++
 			mconcat (tocChapter draft True . chapters) ++
 			mconcat (h 2
-				. (\cat -> simpleRender2 anchor{aHref="SectionToSection/" ++ cat, aText=indexCatName cat})
-				. ["generalindex", "grammarindex", "headerindex", "libraryindex", "conceptindex", "impldefindex"])
+				. (\cat -> render anchor{aHref="SectionToSection/" ++ cat, aText=indexCatName cat} defaultRenderContext)
+				. indices)

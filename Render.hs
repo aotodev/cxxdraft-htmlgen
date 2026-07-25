@@ -10,7 +10,7 @@
 	FlexibleInstances #-}
 
 module Render (
-	Render(render), concatRender, renderTab, renderFig, renderIndex, simpleRender, simpleRender2, squareAbbr,
+	Render(render), concatRender, renderTab, renderFig, renderIndex, squareAbbr,
 	linkToSection, secnum, Page(..), parentLink, abbrHref,
 	defaultRenderContext, isSectionPage,
 	RenderContext(..), renderLatexParas
@@ -485,17 +485,17 @@ instance Render LaTeXUnit where
 	    let renderAbbr abbr = render (TeXComm "ref" "" [(FixArg, [TeXRaw abbr])]) ctx
 	    in " (" ++ mconcat (intersperse ", " $ map (renderAbbr . Text.strip) $ Text.splitOn "," abbrs) ++ ")"
 	render (TeXComm "nopnumdiffref" _ [(FixArg, [TeXRaw (Text.splitOn "," -> abbrs)])]) = \ctx ->
-	    let f abbr = simpleRender2 anchor{aHref = abbrHref abbr ctx, aText = squareAbbr True abbr}
+	    let f abbr = render anchor{aHref = abbrHref abbr ctx, aText = squareAbbr True abbr} ctx
 	    in "<b>Affected " ++ (if length abbrs == 1 then "subclause" else "subclauses") ++ ":</b> "
 	        ++ commasAnd (map f abbrs)
 	render (TeXComm "weblink" _ [(FixArg, text), (FixArg, href)])
-		= render anchor
-			{ aText = simpleRender2 text
-			, aHref = simpleRender href}
+		= \ctx -> render anchor
+			{ aText = render text ctx
+			, aHref = builderToStrictText $ render href ctx} ctx
 	render (TeXComm "url" _ [(FixArg, u)])
-		= render anchor
-			{ aText = simpleRender2 u
-			, aHref = simpleRender u }
+		= \ctx -> render anchor
+			{ aText = render u ctx
+			, aHref = builderToStrictText $ render u ctx } ctx
 	render (TeXComm "link" _ [(FixArg, txt), (FixArg, [TeXRaw abbr])])
 		= \ctx -> if noTags ctx then render txt ctx else render anchor{
 			aHref = abbrHref abbr ctx,
@@ -647,7 +647,7 @@ instance Render IndexEntry where
 				 , aText = render x ctx}) ctx
 	render IndexEntry{indexEntryKind=Just IndexClose} = return ""
 	render IndexEntry{..} =
-		return $ simpleRender2 anchor
+		render anchor
 			{ aHref = "SectionToSection/" ++ urlChars indexEntrySection
 				++ indexPathHref indexCategory indexEntryKind indexPath
 			, aText = (if indexEntryKind == Just DefinitionIndexEntry then xml "b" [] else id) $ squareAbbr True indexEntrySection }
@@ -765,19 +765,19 @@ instance Render RenderItem where
 			xml "tr" [("id", thisId)] $
 				(xml "td" [] (case mlabel of
 					Nothing -> render link ctx'
-					Just label -> render anchor{aHref = linkHref, aText=simpleRender2 label} ctx' ++ " ")) ++
+					Just label -> render anchor{aHref = linkHref, aText=render label ctx} ctx' ++ " ")) ++
 				(xml "td" [] content)
 		| otherwise =
 			xml "li" [("id", thisId)] $ case mlabel of
 				Nothing -> xml "div" [("class", "marginalizedparent"), ("style", "left:" ++ left)] (render link ctx') ++ content
 				Just label ->
-					render anchor{aHref = linkHref, aText=simpleRender2 label} ctx'
+					render anchor{aHref = linkHref, aText=render label ctx} ctx'
 					++ " " ++ content
 		where
 			content = spacedJoin (render elems ctx') (renderLatexParas paras ctx')
 			left
 				| listOrdered = "-4.5em"
-				| otherwise = simpleRender (-marginalizedParentLeft - ulPaddingLeft * (length nn - 1) - extraIndentation ctx) ++ "mm"
+				| otherwise = builderToStrictText $ render (-marginalizedParentLeft - ulPaddingLeft * (length nn - 1) - extraIndentation ctx) ctx ++ "mm"
 			ulPaddingLeft = 9
 			marginalizedParentLeft = 18
 			thisId = mconcat (idPrefixes ctx) ++ Text.pack (Prelude.last nn)
@@ -1281,25 +1281,23 @@ linkToSection link abbr = anchor{ aHref = linkToSectionHref link abbr, aText = s
 --url :: Text -> Text
 --url = urlChars . LazyText.toStrict . TextBuilder.toLazyText . flip render defaultRenderContext{replXmlChars = False}
 
-simpleRender :: Render a => a -> Text
-simpleRender = LazyText.toStrict . TextBuilder.toLazyText . simpleRender2
-
-simpleRender2 :: Render a => a -> TextBuilder.Builder
-simpleRender2 = flip render defaultRenderContext
+builderToStrictText :: TextBuilder.Builder -> Text
+builderToStrictText = LazyText.toStrict . TextBuilder.toLazyText
 
 secnum :: Int -> Text -> Section -> TextBuilder.Builder
 secnum reduceIndent href se@Section{..} =
-	simpleRender2 (anchor{aClass="secnum", aHref=href, aText=secnumText se, aStyle=Text.pack style})
+	render (anchor{aClass="secnum", aHref=href, aText=secnumText se, aStyle=Text.pack style}) defaultRenderContext
 	where
 		style = "min-width:" ++ show (50 + (length parents - reduceIndent) * 15) ++ "pt"
 
 secnumText :: Section -> TextBuilder.Builder
 secnumText Section{sectionNumber=n,..}
 	| AnnexChapter _ <- chapter, null parents = "Annex&ensp;" ++ chap ++ "&emsp;"
-	| otherwise = intercalateBuilders "." (chap : simpleRender2 . tail ns)
+	| otherwise = intercalateBuilders "." (chap : flip render ctx . tail ns)
 	where
+		ctx = defaultRenderContext
 		ns = reverse $ n : sectionNumber . parents
 		chap :: TextBuilder.Builder
 		chap
-			| chapter == NormalChapter = simpleRender2 (head ns)
+			| chapter == NormalChapter = render (head ns) ctx
 			| otherwise = TextBuilder.singleton $ ['A'..] !! head ns

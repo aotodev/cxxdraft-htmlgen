@@ -26,6 +26,17 @@ readCmdLineArgs = \case
 	[repo] -> CmdLineArgs{sectionFileStyle=WithExtension,sectionToWrite=Nothing,..}
 	_ -> error "param: path/to/repo"
 
+copyFileToDir :: FilePath -> FilePath -> IO ()
+copyFileToDir d f = copyFile f (d ++ "/" ++ f)
+
+simpleFilesToCopy :: [FilePath]
+simpleFilesToCopy = [
+    "expanded.css",
+    "colored.css",
+    "normative-only.css",
+    "icon-light.png",
+    "icon-dark.png"]
+
 main :: IO ()
 main = do
 	cwd <- getCurrentDirectory
@@ -38,11 +49,7 @@ main = do
 
 	setCurrentDirectory cwd
 	createDirectoryIfMissing True outputDir
-	copyFile "icon-light.png" (outputDir ++ "/icon-light.png")
-	copyFile "icon-dark.png" (outputDir ++ "/icon-dark.png")
-	forM_ ["expanded.css", "colored.css", "normative-only.css"] $
-		\f -> do
-			copyFile f (outputDir ++ "/" ++ f)
+	forM_ simpleFilesToCopy $ copyFileToDir outputDir
 	case sectionToWrite of
 		Just abbr -> writeSingleSectionFile sectionFileStyle draft abbr
 		Nothing -> do

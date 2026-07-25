@@ -25,7 +25,7 @@ import qualified Data.Text as Text
 import qualified Data.Text.Lazy.Builder as TextBuilder
 import LaTeXBase (LaTeXUnit(..), ArgKind(..))
 import Pages (writePage, pageContent, pagePath, PageStyle(..), fileContent, outputDir, Link(..))
-import Render (render, concatRender, simpleRender2, renderFig, abbrHref,
+import Render (render, concatRender, renderFig, abbrHref,
 	defaultRenderContext, renderTab, RenderContext(..), Page(..),linkToSection, squareAbbr,
 	secnum, renderLatexParas, isSectionPage, parentLink, renderIndex)
 import Document
@@ -46,10 +46,10 @@ renderParagraph ctx@RenderContext{nearestEnclosing=Left Paragraph{..}, draft=Dra
 		sourceLink
 			| Just SourceLocation{..} <- paraSourceLoc =
 				xml "div" [("class", "sourceLinkParent")]
-				$ simpleRender2 $ anchor
+				$ render anchor
 					{ aClass = "sourceLink"
 					, aText = "#"
-					, aHref = urlBase ++ Text.pack (sourceFile ++ "#L" ++ show sourceLine) }
+					, aHref = urlBase ++ Text.pack (sourceFile ++ "#L" ++ show sourceLine) } ctx
 			| otherwise = ""
 
 		renderNumbered :: Text -> TextBuilder.Builder -> TextBuilder.Builder
@@ -158,7 +158,7 @@ sectionHeader reduceIndent hLevel s@Section{..} secnumHref abbr_ref ctx
     | otherwise = h hLevel $ num ++ " " ++ name ++ " " ++ abbrR
   where
     num = secnum reduceIndent secnumHref s
-    abbrR = simpleRender2 abbr_ref{aClass = "abbr_ref", aText = squareAbbr False abbreviation}
+    abbrR = render abbr_ref{aClass = "abbr_ref", aText = squareAbbr False abbreviation} ctx
     name = render sectionName ctx{inSectionTitle=True}
 
 writeFiguresFile :: PageStyle -> Draft -> IO ()
