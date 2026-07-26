@@ -23,7 +23,7 @@ import Document (
 	Section(..), Chapter(..), Table(..), Figure(..), Sections(..), figures, formulas, tables, Item(..),
 	IndexComponent(..), IndexTree, IndexNode(..), IndexKind(..), IndexEntry(..), Formula(..),
 	IndexPath, indexKeyContent, tableByAbbr, figureByAbbr, formulaByAbbr, Paragraph(..), Note(..), Example(..),
-	chapterOfSection)
+	chapterOfSection, SectionKind(..))
 import LaTeXBase (LaTeX, LaTeXUnit(..), ArgKind(..), MathType(..), lookForCommand, concatRaws,
     renderLaTeX, trim, isMath, isCodeblock, texStripPrefix, texSpan, mapTeX, mapCommandName)
 import qualified Data.IntMap as IntMap
@@ -125,8 +125,6 @@ simpleMacros =
 	, ("textlangle"     , "&langle;")
 	, ("textrangle"     , "&rangle;")
 	, ("textmu"         , "μ")
-	, ("tablerefname"   , "Table")
-	, ("figurerefname"  , "Figure")
 	, ("newline"        , "<br>")
 	, (">"              , "&#9;")
 	, ("bnfindent"      , "&emsp;&emsp;&emsp;")
@@ -432,6 +430,37 @@ renderIndexLink cmd [(FixArg, txt), (FixArg, [TeXRaw cat]), (FixArg, rawIndexPat
 				y -> error $ "bad indexlink arg: " ++ show y
 renderIndexLink _ _ _ = error "bad indexlink"
 
+renderHyperRef :: Abbreviation -> TextBuilder.Builder -> RenderContext -> TextBuilder.Builder
+renderHyperRef abbr linkText ctx@RenderContext{..}
+    | noTags = linkText
+    | Just sec <- Map.lookup abbr (labels draft) = render anchor{
+        aHref = abbrHref (abbreviation sec) ctx ++ "#" ++ abbr,
+        aText = squareAbbr (not noTags) (abbreviation sec),
+        aTitle = abbrTitle (abbreviation sec) False ctx } ctx
+    | SectionPage pageSec <- page, abbreviation pageSec == abbr = linkText
+    | otherwise = render anchor{
+        aHref = abbrHref abbr ctx,
+        aText = linkText,
+        aTitle = abbrTitle abbr False ctx } ctx
+
+refText :: Abbreviation -> RenderContext -> TextBuilder.Builder
+refText abbr RenderContext{..}
+        | "tab:" `isPrefixOf` abbr
+        , Just Table{..} <- tableByAbbr draft abbr = TextBuilder.fromString $ show tableNumber
+        | "fig:" `isPrefixOf` abbr
+        , Figure{..} <- figureByAbbr draft abbr = TextBuilder.fromString $ show figureNumber
+        | "eq:" `isPrefixOf` abbr
+        , f@Formula{..} <- formulaByAbbr draft abbr = TextBuilder.fromText $ fullFormulaNumber f
+        | otherwise = prefix ++ squareAbbr (not noTags) abbr
+    where
+        prefix :: TextBuilder.Builder
+        prefix
+            | Just Section{..} <- sectionByAbbr draft abbr, null parents =
+                case sectionKind of
+                    AnnexSection _ -> "Annex "
+                    _ -> "Clause "
+            | otherwise = ""
+
 instance Render LaTeXUnit where
 	render (TeXRaw x                 ) = \RenderContext{..} -> TextBuilder.fromText
 	    $ (if rawHyphens then id else replace "--" "–" . replace "---" "—")
@@ -451,36 +480,13 @@ instance Render LaTeXUnit where
 	render m@(TeXMath _ _            ) = renderMath [m]
 	render (TeXComm "commentellip" _ []) = const $ spanTag "comment" "/* ... */"
 	render (TeXComm "ensuremath" _ [(FixArg, x)]) = renderMath x
-	render (TeXComm "hyperref" _ [_, (FixArg, x)]) = render x
 	render (TeXComm "label" _ [(FixArg, [TeXRaw x])]) = render anchor{aId = x, aClass = "index"}
-	render (TeXComm "ref*" x y) = \ctx -> "Clause " ++ render (TeXComm "ref" x y) ctx
-	render (TeXComm "ref" _ [(FixArg, concatRaws -> [TeXRaw abbr])]) = \ctx@RenderContext{..} ->
-		let
-			linkText :: TextBuilder.Builder
-			linkText
-				| "tab:" `isPrefixOf` abbr
-				, Just Table{..} <- tableByAbbr draft abbr = TextBuilder.fromString $ show tableNumber
-				| "fig:" `isPrefixOf` abbr
-				, Figure{..} <- figureByAbbr draft abbr = TextBuilder.fromString $ show figureNumber
-				| "eq:" `isPrefixOf` abbr
-				, f@Formula{..} <- formulaByAbbr draft abbr = TextBuilder.fromText $ fullFormulaNumber f
-				| otherwise = squareAbbr (not noTags) abbr
-			renderLabelRef sec =
-			   simpleRender2 anchor{
-			     aHref = abbrHref (abbreviation sec) ctx ++ "#" ++ abbr,
-			     aText = squareAbbr (not noTags) (abbreviation sec),
-			     aTitle = abbrTitle (abbreviation sec) False ctx }
-			renderSectionRef =
-			  simpleRender2 anchor{
-			    aHref = abbrHref abbr ctx,
-			    aText = linkText,
-			    aTitle = abbrTitle abbr False ctx }
-	    in if noTags then linkText else
-	        case Map.lookup abbr (labels draft) of
-	            Just sec -> renderLabelRef sec
-	            Nothing
-	                | SectionPage pageSec <- page, abbreviation pageSec == abbr -> linkText
-	                | otherwise -> renderSectionRef
+	render (TeXComm "ref" _ [(FixArg, concatRaws -> [TeXRaw abbr])]) =
+	    refText abbr >>= renderHyperRef abbr
+	render (TeXComm "ref*" _ [(FixArg, concatRaws -> [TeXRaw abbr])]) =
+	    refText abbr
+	render (TeXComm "hyperref" _ [(OptArg, concatRaws -> [TeXRaw abbr]), (FixArg, txt)]) =
+	    render txt >>= renderHyperRef abbr
 	render (TeXComm "iref" _ [(FixArg, [TeXRaw abbrs])]) = \ctx ->
 	    let renderAbbr abbr = render (TeXComm "ref" "" [(FixArg, [TeXRaw abbr])]) ctx
 	    in " (" ++ mconcat (intersperse ", " $ map (renderAbbr . Text.strip) $ Text.splitOn "," abbrs) ++ ")"
