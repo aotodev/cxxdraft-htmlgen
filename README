@@ -37,8 +37,16 @@ Usage
   Run it from the repository root, since it reads macros.tex and the
   CSS files from there. Output goes to ./14882/ unless -o is given.
 
-  On Arch Linux, also install ghc-static. The ghc package ships no
-  static libraries.
+  On Arch Linux, link dynamically, since Arch's Haskell packages ship
+  only shared libraries. In ~/.config/cabal/config set:
+
+    library-vanilla: False
+    shared: True
+    executable-dynamic: True
+
+  and under program-default-options:
+
+    ghc-options: -dynamic
 
   The sectionfilestyle parameter is one of:
 
