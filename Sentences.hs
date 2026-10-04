@@ -163,10 +163,10 @@ instance LinkifyFullStop LaTeX where
         inUnit (TeXEnv "indented" [] body)
             | Just body' <- linkifyFullStop link body = Just [TeXEnv "indented" [] body']
         inUnit (TeXComm "text" ws [(FixArg, x)])
-            | Just x' <- linkifyFullStop link x = Just (moveStuffOutsideText (TeXComm "text" ws [(FixArg, x')]))
+            | Just x' <- linkifyFullStop link x = Just [TeXComm "text" ws [(FixArg, x')]]
             | otherwise = Nothing
         inUnit (TeXComm "mbox" ws [(FixArg, x)])
-            | Just x' <- linkifyFullStop link x = Just (moveStuffOutsideText (TeXComm "mbox" ws [(FixArg, x')]))
+            | Just x' <- linkifyFullStop link x = Just [TeXComm "mbox" ws [(FixArg, x')]]
             | otherwise = Nothing
         inUnit (TeXMath kind m)
             | Just m' <- linkifyFullStop link m = Just [TeXMath kind m']
@@ -195,13 +195,3 @@ instance LinkifyFullStop [Element] where
             | otherwise = (LatexElement u :) . f more
         f _ = Nothing
 
-moveStuffOutsideText :: LaTeXUnit -> LaTeX
-    -- Turns \text{ \class{bla} } into \text{ }\class{\text{bla}}\text{ }, and similar for \href,
-    -- because MathJax does not support \class and \href in \text.
-moveStuffOutsideText (TeXComm parent pws [(FixArg, [TeXComm nested nws [x, y]])])
-    | parent `elem` ["text", "mbox"]
-    , nested `elem` ["class", "href"] = [TeXComm nested nws [x, (FixArg, moveStuffOutsideText (TeXComm parent pws [y]))]]
-moveStuffOutsideText (TeXComm parent pws [(FixArg, t)])
-    | parent `elem` ["text", "mbox"]
-    , length t >= 2 = concatMap (\u -> moveStuffOutsideText $ TeXComm parent pws [(FixArg, [u])]) t
-moveStuffOutsideText u = [u]

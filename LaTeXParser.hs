@@ -382,7 +382,7 @@ tokenize (x:y) = Token [x] : tokenize y
 
 	-- Notice how the whitespace following a command like \bla is included in the Token
 	-- This lets the parser include it in the TeXComm/TeXCommS's command field, so that
-	-- the whitespace is not lost when serializing back to text when sending to MathJax.
+	-- the whitespace is not lost when serializing back to text, and math can render it.
 
 replArgs :: [[Token]] -> [Token] -> [Token]
 replArgs args = go

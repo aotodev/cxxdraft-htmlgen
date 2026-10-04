@@ -25,27 +25,24 @@ import Document (
 	IndexPath, indexKeyContent, tableByAbbr, figureByAbbr, formulaByAbbr, Paragraph(..), Note(..), Example(..),
 	chapterOfSection, SectionKind(..))
 import LaTeXBase (LaTeX, LaTeXUnit(..), ArgKind(..), MathType(..), lookForCommand, concatRaws,
-    renderLaTeX, trim, isMath, isCodeblock, texStripPrefix, texSpan, mapTeX, mapCommandName)
+    trim, isMath, isCodeblock, texStripPrefix, texSpan)
 import qualified Data.IntMap as IntMap
 import Data.Text (isPrefixOf)
 import qualified Data.Text.Lazy.Builder as TextBuilder
 import Debug.Trace (trace)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as LazyText
-import qualified Text.HTML.TagSoup as Soup
 import Data.Char (isAlpha, isSpace, isAlphaNum, toLower, isUpper, ord, isDigit, toUpper)
-import Control.Arrow (second)
 import qualified Prelude ()
-import qualified MathJax
 import Prelude hiding (take, (.), (++), writeFile)
-import Data.List (find, nub, intersperse, (\\), sortOn, dropWhileEnd)
+import Data.List (find, nub, intersperse, sortOn, dropWhileEnd)
 import qualified Data.Map as Map
 import Data.Maybe (isJust, fromJust)
 import Pages (Link(..))
 import Sentences (linkifyFullStop)
 import Util ((.), (++), replace, Text, xml, spanTag, anchor, Anchor(..), greekAlphabet,
     urlChars, intercalateBuilders, replaceXmlChars, spanJust, h, partitionBy, mapHead,
-    toSuperScriptChar)
+    toSuperScriptChar, splitOn)
 import CxxParser (parseCppDirective, parseLiteral, parseComment)
 
 kill, literal :: [String]
@@ -53,7 +50,8 @@ kill = words $
 	"clearpage renewcommand newcommand enlargethispage noindent indent vfill pagebreak setlength " ++
 	"caption capsep continuedcaption bottomline hline rowsep hspace endlist cline " ++
 	"hfill nocorr small endhead kill footnotesize rmfamily microtypesetup nobreak nolinebreak " ++
-	"topline FlushAndPrintGrammar left right protect = ! @ - xspace obeyspaces"
+	"topline FlushAndPrintGrammar left right protect = ! @ - xspace obeyspaces " ++
+	"displaystyle big bigl bigr Big Bigl Bigr mathop"
 literal = ["#", "{", "}", "~", "%", ""]
 
 simpleMacros :: [(String, Text)]
@@ -96,13 +94,13 @@ simpleMacros =
 	, ("hspace"         , " ")
 	, ("space"          , " ")
 	, ("equiv"          , "&equiv;")
-	, ("le"             , "&ensp;≤&ensp;")
-	, ("leq"            , "&ensp;≤&ensp;")
-	, ("ge"             , "&ensp;≥&ensp;")
-	, ("geq"            , "&ensp;≥&ensp;")
-	, ("neq"            , "&ensp;≠&ensp;")
-	, ("land"           , "&ensp;∧&ensp;")
-	, ("lor"            , "&ensp;∨&ensp;")
+	, ("le"             , " ≤ ")
+	, ("leq"            , " ≤ ")
+	, ("ge"             , " ≥ ")
+	, ("geq"            , " ≥ ")
+	, ("neq"            , " ≠ ")
+	, ("land"           , " ∧ ")
+	, ("lor"            , " ∨ ")
 	, ("cdot"           , "·")
 	, ("cdots"          , "⋯")
 	, ("to"             , "→")
@@ -120,6 +118,14 @@ simpleMacros =
 	, ("exp"            , "<span class=\"mathrm\">exp</span>")
 	, ("ln"             , "<span class=\"mathrm\">ln</span>")
 	, ("log"            , "<span class=\"mathrm\">log</span>")
+	, ("sin"            , "<span class=\"mathrm\">sin</span>")
+	, ("cos"            , "<span class=\"mathrm\">cos</span>")
+	, ("lim"            , "<span class=\"mathrm\">lim</span>")
+	, ("mod"            , " <span class=\"mathrm\">mod</span> ")
+	, ("infty"          , "∞")
+	, ("int"            , "∫")
+	, ("dotsb"          , "⋯")
+	, (":"              , " ")
 	, ("opt"            , "<sub><small>opt</small></sub>")
 	, ("rightshift"     , "<span class=\"mathsf\">rshift</span>")
 	, ("textlangle"     , "&langle;")
@@ -480,6 +486,10 @@ instance Render LaTeXUnit where
 	render m@(TeXMath _ _            ) = renderMath [m]
 	render (TeXComm "commentellip" _ []) = const $ spanTag "comment" "/* ... */"
 	render (TeXComm "ensuremath" _ [(FixArg, x)]) = renderMath x
+	render (TeXComm "frac" _ [(FixArg, num), (FixArg, den)]) = renderFrac num den
+	render (TeXComm "binom" _ [(FixArg, n), (FixArg, k)]) = \ctx ->
+		"(" ++ renderSimpleMath n ctx ++ " choose " ++ renderSimpleMath k ctx ++ ")"
+	render (TeXComm "overline" _ [(FixArg, x)]) = \ctx -> parens x (renderSimpleMath x ctx) ++ "&#x305;"
 	render (TeXComm "label" _ [(FixArg, [TeXRaw x])]) = render anchor{aId = x, aClass = "index"}
 	render (TeXComm "ref" _ [(FixArg, concatRaws -> [TeXRaw abbr])]) =
 	    refText abbr >>= renderHyperRef abbr
@@ -627,7 +637,9 @@ instance Render LaTeXUnit where
 	render env@(TeXEnv e args t)
 	    | e `elem` makeSpan            = \ctx -> (if noTags ctx then id else spanTag (Text.pack e)) (render t ctx)
 	    | e `elem` makeDiv             = xml "div" [("class", Text.pack e)] . render t
-	    | isMath env && hasComplexMath True [env] = renderComplexMath [env]
+	    | e `elem` ["array", "eqnarray*"] = renderMathTable t
+	    | e == "matrix"                = renderMatrix t
+	    | isMath env                   = spanTag "mathblock" . renderSimpleMath t
 	    | isCodeblock env              = renderCodeblock e args t
 		| e == "minipage", [e2@(TeXEnv _ _ cb)] <- trim t, isCodeblock e2 =
 			xml "div" [("class", "minipage")] . renderCodeblock "codeblock" [] cb
@@ -867,8 +879,8 @@ instance Render Example where
 instance Render Formula where
     render f@Formula{..} ctx =
             xml "div" [("class", "formula"), ("id", formulaAbbr)] $
-                doRenderComplexMath [TeXMath Square ([tag] ++ formulaContent)] ctx
-        where tag = TeXComm "tag" "" [(FixArg, [TeXRaw (fullFormulaNumber f)])]
+                spanTag "mathblock" $ renderSimpleMath formulaContent ctx
+                    ++ "&emsp;(" ++ TextBuilder.fromText (fullFormulaNumber f) ++ ")"
 
 fullFormulaNumber :: Formula -> Text
 fullFormulaNumber Formula{..} = Text.pack $ show chapterNum ++ "." ++ show formulaNumber
@@ -906,25 +918,6 @@ instance Render Element where
 				"description" -> "ul"
 				"thebibliography" -> "ul"
 				_ -> undefined
-
-class HasComplexMath a where
-    hasComplexMath :: Bool -> a -> Bool
-
-instance HasComplexMath LaTeXUnit where
-    hasComplexMath mathMode (TeXRaw x) = mathMode && Text.any (`elem` ("+-*/^_=' " :: String)) (Text.strip x)
-    hasComplexMath m (TeXComm c _ args)
-        | c `elem` words "frac sum binom int sqrt lfloor rfloor lceil rceil log mathscr mapsto cdot bmod" = True
-        | c `elem` words "tcode" = hasComplexMath False (map snd args)
-        | otherwise = hasComplexMath m (map snd args)
-    hasComplexMath _ (TeXMath _ x) = hasComplexMath True x
-    hasComplexMath m (TeXBraces x) = hasComplexMath m x
-    hasComplexMath m (TeXEnv e _ args)
-        | e `elem` ["array", "eqnarray"] = True
-        | otherwise = hasComplexMath m args
-    hasComplexMath _ TeXLineBreak = False
-
-instance HasComplexMath a => HasComplexMath [a] where
-    hasComplexMath m = any (hasComplexMath m)
 
 data Page
 	= SectionPage Section
@@ -1008,62 +1001,64 @@ abbrHref abbr RenderContext{..}
 			_ -> "#" ++ urlChars abbr
 	| otherwise = linkToSectionHref SectionToSection abbr
 
-prepMath :: LaTeX -> String
-prepMath = Text.unpack . renderLaTeX . (>>= cleanup) . replaceTcode
-  where
-    replaceTcode = mapCommandName (\x -> if x == "tcode" then "texttt" else x)
-    cleanupText :: LaTeX -> LaTeX -- MathJax does not support \, in \text
-    cleanupText [] = []
-    cleanupText (TeXComm "," _ [] : x) = TeXRaw " " : cleanupText x
-    cleanupText (x : y) = cleanup x ++ cleanupText y
-    cleanup :: LaTeXUnit -> LaTeX
-    cleanup (TeXComm "texttt" _ [(FixArg, TeXComm "texttt" "" [(FixArg, x)] : y)]) =
-            cleanup (TeXComm "texttt" "" [(FixArg, x ++ y)])
-    cleanup (TeXComm "texttt" _ [(FixArg, TeXRaw x : y)]) =
-            TeXComm "texttt" "" [(FixArg, [TeXRaw x])] : cleanup (TeXComm "texttt" "" [(FixArg, y)])
-    cleanup (TeXComm "texttt" _ [(FixArg, TeXComm "textit" "" x : y)]) =
-        [TeXComm "class" "" [(FixArg, [TeXRaw "textit"]), (FixArg, [TeXComm "texttt" "" x])]]
-        ++ cleanup (TeXComm "texttt" "" [(FixArg, y)])
-        -- \texttt{\textit{x}y} -> \class{textit}{\texttt{x}}\texttt{y}
-        -- MathJax does not support \textit inside \texttt
-    cleanup (TeXComm "nontcode" _ x) = [TeXComm "texttt" "" (map (second (>>= cleanup)) x)]
-    cleanup (TeXComm "ensuremath" _ [(FixArg, x)]) = x >>= cleanup
-    cleanup (TeXComm "discretionary" _ _) = []
-    cleanup (TeXComm "hfill" _ []) = []
-    cleanup (TeXComm "text" ws [(FixArg, x)]) = [TeXComm "text" ws [(FixArg, cleanupText x)]]
-    cleanup (TeXComm "break" _ []) = []
-    cleanup (TeXComm "br" _ []) = []
-    cleanup (TeXComm "-" _ []) = []
-    cleanup (TeXComm "quad" _ []) = [TeXRaw " "] -- because MathJax does not support \quad
-    cleanup (TeXComm x ws y) = [TeXComm x ws (map (second (>>= cleanup)) y)]
-    cleanup x@(TeXRaw _) = [x]
-    cleanup (TeXBraces x) = [TeXBraces (x >>= cleanup)]
-    cleanup (TeXEnv x y z) = [TeXEnv x (map (second (>>= cleanup)) y) (z >>= cleanup)]
-    cleanup (TeXMath Dollar [c@(TeXComm "text" _ _)]) = cleanup c
-        -- because the draft sources have \bigoh{$\text{bla}$}, which MathJax doesn't support
-    cleanup (TeXMath x y) = [TeXMath x (y >>= cleanup)]
-    cleanup x@TeXLineBreak = [x]
-
 renderMath :: LaTeX -> RenderContext -> TextBuilder.Builder
 renderMath [TeXMath Dollar (c@(TeXComm "noncxxtcode" _ _) : more)] ctx =
   render c ctx ++ renderMath [TeXMath Dollar more] ctx
 renderMath m ctx
 	| noTags ctx = renderSimpleMath m ctx
-	| hasComplexMath True m = renderComplexMath (mapTeX replaceNonCxxTcode m) ctx
 	| otherwise = spanTag (mathKind m) $ renderSimpleMath m ctx
 	where
 		mathKind [TeXMath Square _] = "mathblock"
 		mathKind _ = "math"
-		replaceNonCxxTcode :: LaTeXUnit -> Maybe LaTeX
-		replaceNonCxxTcode (TeXComm "noncxxtcode" _ args) = Just [TeXComm "tcode" "" args]
-		replaceNonCxxTcode _ = Nothing
+
+renderFrac :: LaTeX -> LaTeX -> RenderContext -> TextBuilder.Builder
+renderFrac num den ctx = parens num (renderSimpleMath num ctx) ++ "/" ++ parens den (renderSimpleMath den ctx)
+
+-- | Parentheses only CSS-less text browsers show, to delimit a multi-character
+-- superscript. w3m already brackets subscripts.
+ttyParens :: LaTeX -> TextBuilder.Builder -> TextBuilder.Builder
+ttyParens x b
+	| isAtom x = b
+	| otherwise = spanTag "tty" "(" ++ b ++ spanTag "tty" ")"
+
+parens :: LaTeX -> TextBuilder.Builder -> TextBuilder.Builder
+parens x b
+	| isAtom x = b
+	| otherwise = "(" ++ b ++ ")"
+
+isAtom :: LaTeX -> Bool
+isAtom [TeXBraces x] = isAtom x
+isAtom [TeXRaw t] = Text.length (Text.strip t) == 1
+isAtom [TeXComm _ _ []] = True
+isAtom _ = False
+
+-- | Rows split at \\, cells at unescaped &.
+mathRows :: LaTeX -> [[LaTeX]]
+mathRows body = [map trim (cells r) | r <- splitOn (== TeXLineBreak) body, trim r /= []]
+	where
+		cells :: LaTeX -> [LaTeX]
+		cells = foldr f [[]]
+		f (TeXRaw t) (c : cs) = case reverse (Text.splitOn "&" t) of
+			(lastPart : before) -> foldl (\acc p -> [TeXRaw p] : acc) ((TeXRaw lastPart : c) : cs) before
+			[] -> c : cs
+		f x (c : cs) = (x : c) : cs
+		f _ [] = []
+
+-- | valign because w3m ignores CSS and centers cells vertically.
+renderMathTable :: LaTeX -> RenderContext -> TextBuilder.Builder
+renderMathTable body ctx = xml "table" [("class", "matharray")] $ mconcat
+	[xml "tr" [] $ mconcat [xml "td" [("valign", "top")] (renderSimpleMath c ctx) | c <- r] | r <- mathRows body]
+
+-- | Inline, as [a b; c d]. The brackets come from the surrounding \left[ \right].
+renderMatrix :: LaTeX -> RenderContext -> TextBuilder.Builder
+renderMatrix body ctx = intercalateBuilders "; " [intercalateBuilders " " [renderSimpleMath c ctx | c <- r] | r <- mathRows body]
 
 renderSimpleMath :: LaTeX -> RenderContext -> TextBuilder.Builder
 renderSimpleMath [] _ = ""
 renderSimpleMath (TeXRaw s : rest) sec
 	| tlast `elem` ["^", "_"] = if noTags sec then "�" else
 		renderSimpleMathUnit (TeXRaw $ Text.reverse $ Text.drop 1 s') sec
-		++ xml tag [] (renderSimpleMath content sec)
+		++ xml tag [] ((if tag == "sup" then ttyParens content else id) (renderSimpleMath content sec))
 		++ renderSimpleMath rest' sec
 	| otherwise = renderSimpleMathUnit (TeXRaw s) sec ++ renderSimpleMath rest sec
 	where
@@ -1076,8 +1071,10 @@ renderSimpleMath (TeXRaw s : rest) sec
 		(content, rest') = case rest of
 			(a : b) -> ([a], b)
 			other -> (other, [])
+renderSimpleMath (TeXComm d _ [] : TeXRaw (Text.stripPrefix "." -> Just r) : rest) sec
+	| d `elem` ["left", "right"] = renderSimpleMath (TeXRaw r : rest) sec
 renderSimpleMath (TeXComm "frac" _ [(FixArg, num)] : rest) sec =
-	"[" ++ renderSimpleMath num sec ++ "] / [" ++ renderSimpleMath den sec ++ "]" ++ renderSimpleMath rest' sec
+	renderFrac num den sec ++ renderSimpleMath rest' sec
 	where
 		(den, rest') = findDenum rest
 		findDenum (TeXBraces d : r) = (d, r)
@@ -1119,57 +1116,12 @@ renderSimpleMathUnit (TeXComm "mathtt" _ [(FixArg, x)]) ctx = spanTag "mathtt" (
 renderSimpleMathUnit (TeXBraces x) sec = renderSimpleMath x sec
 renderSimpleMathUnit (TeXMath Dollar m) sec = renderSimpleMath (trim m) sec
 renderSimpleMathUnit (TeXMath _ m) sec = renderSimpleMath m sec
+renderSimpleMathUnit (TeXComm "sqrt" _ [(FixArg, x)]) sec = "√" ++ parens x (renderSimpleMath x sec)
+renderSimpleMathUnit (TeXComm c _ [(FixArg, x)]) sec
+	| c `elem` ["mathbin", "mathrel"] = " " ++ renderSimpleMath x sec ++ " "
+	| c `elem` ["mathsf", "mathrm", "mathit", "mathscr", "operatorname"] = spanTag (Text.pack c) (renderSimpleMath x sec)
+renderSimpleMathUnit c@(TeXComm _ ws []) sec | not (null ws) = render c sec ++ " "
 renderSimpleMathUnit other sec = render other sec
-
-mathKey :: LaTeX -> (String, Bool)
-mathKey m = case m of
-		[TeXMath kind t] -> (prepMath t, kind == Dollar)
-		[TeXEnv "eqnarray*" [] _] -> (prepMath m, False)
-		[TeXEnv "equation*" [] _] -> (prepMath m, False)
-		_ -> (prepMath m, True)
-
-highlightCodeInMath :: RenderContext -> [Soup.Tag Text] -> TextBuilder.Builder
-highlightCodeInMath ctx
-    ( open@(Soup.TagOpen "span" (("class", cls) : _))
-    : Soup.TagText code
-    : close@(Soup.TagClose "span")
-    : more )
-      | cls `elem` ["mjx-char MJXc-TeX-type-R", "mjx-charbox MJXc-TeX-type-R"]
-        = TextBuilder.fromText (Soup.renderTags [open])
-        ++ highlight ctx [TeXRaw code]
-        ++ TextBuilder.fromText (Soup.renderTags [close])
-        ++ highlightCodeInMath ctx more
-highlightCodeInMath ctx (a:b) = TextBuilder.fromText (Soup.renderTags [a]) ++ highlightCodeInMath ctx b
-highlightCodeInMath _ [] = ""
-
-{- Unfortunately, for:    \class{hidden_link}{\href{url}{bla}}
-MathJax generates:        <a href="url"><span class="yada hidden_link">bla</span></a>
-
-But CSS does not let you say "apply the following style to 'a' elements that have a 'span' child with class 'hidden_link'".
-
-So fixHiddenLinks moves the "hidden_link" class from the span to the a... -}
-
-fixHiddenLinks :: [Soup.Tag Text] -> [Soup.Tag Text]
-fixHiddenLinks (Soup.TagOpen "a" attrs : Soup.TagOpen "span" [("class", Text.words -> cls)] : rest)
-    | "hidden_link" `elem` cls
-        = Soup.TagOpen "a" (("class", "hidden_link") : attrs) :
-          Soup.TagOpen "span" [("class", Text.unwords $ cls \\ ["hidden_link"])] : rest
-fixHiddenLinks (x:y) = x : fixHiddenLinks y
-fixHiddenLinks [] = []
-
-removeAriaLabel :: Soup.Tag Text -> Soup.Tag Text
-removeAriaLabel (Soup.TagOpen x attrs) = Soup.TagOpen x (filter ((/= "aria-label") . fst) attrs)
-removeAriaLabel x = x
-
-doRenderComplexMath :: LaTeX -> RenderContext -> TextBuilder.Builder
-doRenderComplexMath math ctx =
-        (if inComment ctx then TextBuilder.fromText . Soup.renderTags else highlightCodeInMath ctx) $
-          fixHiddenLinks $ map removeAriaLabel $ Soup.parseTags $ MathJax.render formula inline
-    where (formula, inline) = mathKey math
-
-renderComplexMath :: LaTeX -> RenderContext -> TextBuilder.Builder
-renderComplexMath math ctx = (if inline then "" else "<br>") ++ spanTag "math" (doRenderComplexMath math ctx)
-    where (_, inline) = mathKey math
 
 cssClasses :: ColumnSpec -> Text
 cssClasses (ColumnSpec alignment border _) =
@@ -1259,7 +1211,7 @@ instance Render Sentence where
 			link = TeXComm "class" ""
 			    [ (FixArg, [TeXRaw "hidden_link"])
 			    , (FixArg, [TeXComm "href" "" [(FixArg, [TeXRaw ("#" ++ fromJust i)]), (FixArg, [TeXRaw "."])]])
-			    ] -- in math, \class and \href are recognized by mathjax
+			    ]
 
 renderLatexParas :: [TeXPara] -> RenderContext -> TextBuilder.Builder
 renderLatexParas pp ctx = mconcat $ map (xml "div" [("class", "texpara")] . flip render ctx) pp

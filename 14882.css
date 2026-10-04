@@ -323,6 +323,7 @@ span.techterm { font-style: italic; }
 span.mathit { font-style: italic; }
 span.mathsf { font-family: 'Noto Sans'; }
 span.mathrm { font-family: 'Noto Serif'; font-style: normal; }
+span.mathsf .mathalpha, span.mathrm .mathalpha, span.operatorname .mathalpha { font-style: normal; }
 span.textrm { font-family: 'Noto Serif'; font-size: 10pt; }
 span.textsl { font-style: italic; }
 span.mathtt { font-family: 'Noto Sans Mono'; font-style: normal; }
@@ -356,6 +357,11 @@ span.mathblock {
 span.mathalpha {
 	font-style: italic;
 }
+
+.tty { display: none; }
+
+table.matharray { border: none; margin: 0.5em auto; }
+table.matharray td { padding: 0 0.3em; }
 
 span.synopsis {
 	font-weight: bold;
@@ -599,7 +605,6 @@ table.enumerate td:first-child {
         color: #e0e0e0;
     }
 
-    span.mjx-mstyle { color: #e0e0e0 !important }
 
     a:link { color: #74bdff; }
     a:visited { color: #c38aff; }

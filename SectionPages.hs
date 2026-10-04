@@ -19,7 +19,6 @@ import System.Directory (createDirectoryIfMissing)
 import Control.Monad (when, forM_)
 import Control.Arrow (first)
 import Data.Maybe (fromJust)
-import System.Process (readProcess)
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy.Builder as TextBuilder
@@ -257,32 +256,11 @@ writeIndexFiles :: PageStyle -> Draft -> Index -> [IO ()]
 writeIndexFiles sfs draft index = flip map (Map.toList index) $ uncurry (writeIndexFile sfs draft) . first Text.unpack
 
 writeCssFile :: IO ()
-writeCssFile = do
-	base <- Text.pack . readFile "14882.css"
-	let
-		replaceFonts =
-			Text.replace
-				".MJXc-TeX-sans-R {font-family: MJXc-TeX-sans-R,MJXc-TeX-sans-Rw}"
-				".MJXc-TeX-sans-R {font-family: 'Noto Sans'; font-size: 10pt; }" .
-			Text.replace
-				".MJXc-TeX-type-R {font-family: MJXc-TeX-type-R,MJXc-TeX-type-Rw}"
-				".MJXc-TeX-type-R {font-family: 'Noto Sans Mono'; font-size: 10pt; }" .
-			Text.replace
-				".MJXc-TeX-main-R {font-family: MJXc-TeX-main-R,MJXc-TeX-main-Rw}"
-				".MJXc-TeX-main-R {}" .
-			Text.replace
-				".MJXc-TeX-math-I {font-family: MJXc-TeX-math-I,MJXc-TeX-math-Ix,MJXc-TeX-math-Iw}"
-				".MJXc-TeX-math-I {font-style: italic}" .
-			Text.replace
-				".MJXc-TeX-main-I {font-family: MJXc-TeX-main-I,MJXc-TeX-main-Ix,MJXc-TeX-main-Iw}"
-				".MJXc-TeX-main-I {font-style: italic}"
-		-- Replace fonts to make sure code in formulas matches code in code blocks, etc.
-	mjx <- Text.replace "display: block" "display: block;background:inherit" . replaceFonts . Text.pack .
-		readProcess "tex2html" ["--css", ""] ""
-	writeFile (outputDir ++ "/14882.css") (base ++ mjx)
+writeCssFile = readFile "14882.css" >>= writeFile (outputDir ++ "/14882.css") . Text.pack
 
+-- Deduplicated: xrefdelta.tex can list an entry twice, and two parallel writes to one file fail.
 writeXrefDeltaFiles :: PageStyle -> Draft -> [IO ()]
-writeXrefDeltaFiles sfs draft = flip map (xrefDelta draft) $ \(from, to) ->
+writeXrefDeltaFiles sfs draft = flip map (Map.toList $ Map.fromList $ xrefDelta draft) $ \(from, to) ->
 	writeSectionFile (Text.unpack from) sfs (squareAbbr False from) $
 		if to == []
 			then "Subclause " ++ squareAbbr False from ++ " was removed."
