@@ -4,7 +4,7 @@
 module Util (
 	mconcat, (.), (++), Text, replace, xml, spanTag, h, getDigit, startsWith, urlChars,
 	anchor, Anchor(..), writeFile, readFile, greekAlphabet, mapLast, mapHead, stripInfix, dropTrailingWs,
-	textStripInfix, textSubRegex, splitOn, intercalateBuilders, replaceXmlChars, stripAnyPrefix, trimString,
+	textStripInfix, mkRegex, matchRegexAll, subRegex, textSubRegex, splitOn, intercalateBuilders, replaceXmlChars, stripAnyPrefix, trimString,
 	spanJust, measure, partitionBy, toSuperScriptChar
 	) where
 
@@ -17,7 +17,8 @@ import Data.Text (Text, replace)
 import Data.Text.IO (writeFile)
 import Data.Time (getCurrentTime, diffUTCTime)
 import Control.Arrow (first)
-import Text.Regex (subRegex, Regex)
+import Text.Regex.TDFA (Regex, CompOption(..), makeRegexOpts, defaultCompOpt, defaultExecOpt, matchAllText, matchM)
+import Data.Array ((!))
 import qualified Data.Text.Lazy.Builder as TextBuilder
 
 (.) :: Functor f => (a -> b) -> (f a -> f b)
@@ -115,6 +116,27 @@ urlChars =
 	replace "^"  "%5e" .
 	replace " "  "%20" .
 	replace "%"  "%25"
+
+-- Same options as the regex-compat-tdfa mkRegex the patterns were written against.
+mkRegex :: String -> Regex
+mkRegex = makeRegexOpts defaultCompOpt{newSyntax = True, multiline = True} defaultExecOpt
+
+-- | (before, match, after, capture groups)
+matchRegexAll :: Regex -> String -> Maybe (String, String, String, [String])
+matchRegexAll = matchM
+
+-- | In the replacement, \N inserts capture group N and \\ a literal backslash.
+subRegex :: Regex -> String -> String -> String
+subRegex pat input repl = go 0 input (matchAllText pat input)
+	where
+		go _ s [] = s
+		go i s (m : ms) =
+			let (_, (off, len)) = m ! 0
+			in take (off - i) s ++ expand m repl ++ go (off + len) (drop (off + len - i) s) ms
+		expand m ('\\' : '\\' : t) = '\\' : expand m t
+		expand m ('\\' : t@(c : _)) | isDigit c, (n, t') <- span isDigit t = fst (m ! read n) ++ expand m t'
+		expand m (c : t) = c : expand m t
+		expand _ [] = []
 
 textSubRegex :: Regex -> String -> Text -> Text
 textSubRegex pat repl txt = Text.pack $ subRegex pat (Text.unpack txt) repl

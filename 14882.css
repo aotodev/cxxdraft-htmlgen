@@ -399,13 +399,11 @@ div.itemdecl {
 	margin-top: 2ex;
 }
 
-code.itemdeclcode {
-	white-space: pre;
+pre.itemdeclcode {
 	font-family: 'Noto Sans Mono';
 	font-size: 9pt;
-	display: block;
 	overflow: auto;
-	margin-right: -15mm;
+	margin: 0 -15mm 0 0;
 }
 
 .comment { color: green; font-style: italic; font-family: 'Noto Serif'; font-size: 10pt; }

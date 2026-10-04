@@ -3,10 +3,23 @@ Introduction
   cxxdraft-htmlgen parses the LaTeX sources of the draft,
   and generates static HTML pages from them.
 
+Fork
+
+  Fork of https://github.com/Eelis/cxxdraft-htmlgen, aimed at reading
+  the output in a terminal with w3m or a similar text browser:
+
+    w3m 14882/index.html
+
+  Differences from upstream:
+    - code blocks and item declarations are emitted as <pre>, so text
+      browsers keep their line breaks and indentation
+    - builds with current GHC and cabal-install (regex-tdfa replaces
+      the unmaintained regex-compat-tdfa)
+
 Prerequisites
 
   - Git
-  - The Haskell Platform (https://www.haskell.org/platform/)
+  - GHC and cabal-install (https://www.haskell.org/ghcup/)
   - Graphviz
   - Node.js
   - The 'split' NPM package
@@ -15,14 +28,14 @@ Prerequisites
 Usage
 
   Do:
-    git clone https://github.com/Eelis/cxxdraft-htmlgen.git
+    git clone https://github.com/aotodev/cxxdraft-htmlgen.git
     cd cxxdraft-htmlgen
+    cabal update
     cabal build
-    dist/build/cxxdraft-htmlgen/cxxdraft-htmlgen path/to/draft [sectionfilestyle]
+    cabal run cxxdraft-htmlgen -- path/to/draft [sectionfilestyle]
 
-  Or with stack:
-    stack build
-    stack exec cxxdraft-htmlgen path/to/draft [sectionfilestyle]
+  On Arch Linux, also install ghc-static. The ghc package ships no
+  static libraries.
 
   The sectionfilestyle parameter is one of:
 

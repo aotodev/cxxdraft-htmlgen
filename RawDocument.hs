@@ -24,11 +24,10 @@ import Document (Row(..), SourceLocation(..), RowSepKind(..), SectionKind(..), C
 import Data.Maybe (isJust, fromJust)
 import LaTeXParser (Macros(..), Signature(..), nullCmd, storeCmd, storeEnv, Environment(..), Command(..), codeEnv, Token(..), normalCmd, ParseResult(..))
 import Data.Text.IO (readFile)
-import Text.Regex (mkRegex)
 import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.List (transpose, take, isPrefixOf)
-import Util ((.), (++), mapHead, textStripInfix, textSubRegex, splitOn)
+import Util ((.), (++), mapHead, textStripInfix, mkRegex, textSubRegex, splitOn)
 import Prelude hiding (take, (.), takeWhile, (++), lookup, readFile)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process (readProcess)

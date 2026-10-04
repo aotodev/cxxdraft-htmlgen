@@ -215,17 +215,17 @@ instance (Render a, Render b) => Render (a, b) where
 renderCodeblock :: String -> [(ArgKind, LaTeX)] -> LaTeX -> RenderContext -> TextBuilder.Builder
 renderCodeblock env args code ctx =
     (case (env, args) of
-      ("codeblocktu", [(FixArg, title)]) -> (("<p>" ++ render title ctx ++ ":") ++)
+      ("codeblocktu", [(FixArg, title)]) -> (("<p>" ++ render title ctx ++ ":</p>") ++)
       ("indexedcodeblock", [(FixArg, indices)]) ->
       	let
       		link = anchor
       			{ aClass = "itemDeclLink"
       			, aHref = "#" ++ urlChars (indexPathId3 ctx indices)
       			, aText = "🔗" }
-      	in	renderIndexed ctx "span" indices .
+      	in	renderIndexed ctx "div" indices .
       		(xml "div" [("class", "marginalizedparent")] (render link ctx) ++)
       _ -> id) $
-    xml "span" [("class", "codeblock")] (
+    xml "pre" [("class", "codeblock")] (
         highlightLines ctx{rawTilde=True, rawHyphens=True, rawSpace=True, inCodeBlock=True} $
         concatRaws $ expandTcode (dropInitialNewline code))
   where
@@ -549,7 +549,7 @@ instance Render LaTeXUnit where
 			renderIndexed ctx "div" indices $
 			xml "div" [("class", "itemdecl")] $
 			xml "div" [("class", "marginalizedparent")] (render link ctx) ++
-			xml "code" [("class", "itemdeclcode")] (TextBuilder.fromText $ Text.dropWhile (== '\n') $ LazyText.toStrict $ TextBuilder.toLazyText $ highlightLines ctx{rawTilde=True, rawHyphens=True} t)
+			xml "pre" [("class", "itemdeclcode")] (TextBuilder.fromText $ Text.dropWhile (== '\n') $ LazyText.toStrict $ TextBuilder.toLazyText $ highlightLines ctx{rawTilde=True, rawHyphens=True} t)
 	render (TeXComm "discretionary" _ _) = const (TextBuilder.fromText zwsp)
 	render (TeXComm "ifthenelse" _ [_, _, (FixArg, x)]) = render x
 	render (TeXComm "multicolumn" _ [(FixArg, [TeXRaw n]), _, (FixArg, content)]) = xml "td" [("colspan", n)] . render content
@@ -623,7 +623,7 @@ instance Render LaTeXUnit where
 		in
 			xml "div" [("class", "itemdecl"), ("id", i)] $
 			xml "div" [("class", "marginalizedparent")] (render link c) ++
-			xml "code" [("class", "itemdeclcode")] (TextBuilder.fromText $ Text.dropWhile (== '\n') $ LazyText.toStrict $ TextBuilder.toLazyText $ highlightLines c{rawTilde=True, rawHyphens=True} t)
+			xml "pre" [("class", "itemdeclcode")] (TextBuilder.fromText $ Text.dropWhile (== '\n') $ LazyText.toStrict $ TextBuilder.toLazyText $ highlightLines c{rawTilde=True, rawHyphens=True} t)
 	render env@(TeXEnv e args t)
 	    | e `elem` makeSpan            = \ctx -> (if noTags ctx then id else spanTag (Text.pack e)) (render t ctx)
 	    | e `elem` makeDiv             = xml "div" [("class", Text.pack e)] . render t

@@ -8,9 +8,8 @@ import qualified Data.Text as Text
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process (shell, CreateProcess(..), createProcess, StdStream(CreatePipe))
 import System.IO (BufferMode(..), hGetLine, hPutStrLn, hSetBuffering)
-import Text.Regex (mkRegex, subRegex)
 import Prelude hiding ((++))
-import Util ((++))
+import Util ((++), mkRegex, subRegex)
 import qualified Data.Map as Map
 import Data.Map (Map)
 
