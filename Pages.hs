@@ -1,17 +1,15 @@
 {-# LANGUAGE OverloadedStrings, RecordWildCards, ViewPatterns #-}
 
-module Pages (fileContent, pageContent, pagePath, writePage, applyPageStyle, Link(..), outputDir, PageStyle(..)) where
+module Pages (fileContent, pageContent, writePage, applyPageStyle, Link(..), PageStyle(..)) where
 
 import Prelude hiding ((++), (.), writeFile)
 import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
 import Control.Monad (when)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as LazyText
 import qualified Data.Text.Lazy.Builder as TextBuilder
 import Util ((++), (.), Text, writeFile)
-
-outputDir :: FilePath
-outputDir = "14882/"
 
 data PageStyle = Bare | WithExtension | InSubdir
     deriving (Eq, Read)
@@ -62,15 +60,15 @@ applyPageStyle sfs =
 	. doLink sfs SectionToToc
 	. doLink sfs TocToSection
 
-pagePath :: FilePath -> PageStyle -> String
-pagePath n Bare = outputDir ++ n
-pagePath n WithExtension = outputDir ++ n ++ ".html"
-pagePath n InSubdir = outputDir ++ n ++ "/index.html"
+pagePath :: FilePath -> FilePath -> PageStyle -> FilePath
+pagePath out n Bare = out </> n
+pagePath out n WithExtension = out </> n ++ ".html"
+pagePath out n InSubdir = out </> n </> "index.html"
 
 pageContent :: PageStyle -> TextBuilder.Builder -> Text
 pageContent sfs content = applyPageStyle sfs $ LazyText.toStrict $ TextBuilder.toLazyText $ content
 
-writePage :: FilePath -> PageStyle -> Text -> IO ()
-writePage n sfs content = do
-    when (sfs == InSubdir) $ createDirectoryIfMissing True (outputDir ++ n)
-    writeFile (pagePath n sfs) content
+writePage :: FilePath -> FilePath -> PageStyle -> Text -> IO ()
+writePage out n sfs content = do
+    when (sfs == InSubdir) $ createDirectoryIfMissing True (out </> n)
+    writeFile (pagePath out n sfs) content

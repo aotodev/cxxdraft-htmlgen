@@ -10,25 +10,23 @@ module SectionPages
 	, writeTableFiles
 	, writeIndexFiles
 	, writeFootnotesFile
-	, writeCssFile
 	, writeXrefDeltaFiles
 	) where
 
 import Prelude hiding ((++), (.), writeFile)
-import System.Directory (createDirectoryIfMissing)
-import Control.Monad (when, forM_)
+import Control.Monad (forM_)
 import Control.Arrow (first)
 import Data.Maybe (fromJust)
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy.Builder as TextBuilder
 import LaTeXBase (LaTeXUnit(..), ArgKind(..))
-import Pages (writePage, pageContent, pagePath, PageStyle(..), fileContent, outputDir, Link(..))
+import Pages (writePage, pageContent, PageStyle(..), fileContent, Link(..))
 import Render (render, concatRender, renderFig, abbrHref,
 	defaultRenderContext, renderTab, RenderContext(..), Page(..),linkToSection, squareAbbr,
 	secnum, renderLatexParas, isSectionPage, parentLink, renderIndex)
 import Document
-import Util (urlChars, (++), (.), h, anchor, xml, Anchor(..), Text, writeFile, intercalateBuilders)
+import Util (urlChars, (++), (.), h, anchor, xml, Anchor(..), Text, intercalateBuilders)
 
 renderParagraph :: RenderContext -> TextBuilder.Builder
 renderParagraph ctx@RenderContext{nearestEnclosing=Left Paragraph{..}, draft=Draft{..}} =
@@ -139,8 +137,8 @@ sectionFileContent sfs title body = pageContent sfs $ fileContent pathHome title
         "<link rel='alternate stylesheet' type='text/css' href='" ++ pathHome ++ "colored.css' title='Notes and examples colored'>" ++
         "<link rel='alternate stylesheet' type='text/css' href='" ++ pathHome ++ "normative-only.css' title='Notes and examples hidden'>"
 
-writeSectionFile :: FilePath -> PageStyle -> TextBuilder.Builder -> TextBuilder.Builder -> IO ()
-writeSectionFile n sfs title body = writePage n sfs (sectionFileContent sfs title body)
+writeSectionFile :: FilePath -> FilePath -> PageStyle -> TextBuilder.Builder -> TextBuilder.Builder -> IO ()
+writeSectionFile out n sfs title body = writePage out n sfs (sectionFileContent sfs title body)
 
 sectionHeader :: Int -> Int -> Section -> Text -> Anchor -> RenderContext -> TextBuilder.Builder
 sectionHeader reduceIndent hLevel s@Section{..} secnumHref abbr_ref ctx
@@ -160,8 +158,8 @@ sectionHeader reduceIndent hLevel s@Section{..} secnumHref abbr_ref ctx
     abbrR = render abbr_ref{aClass = "abbr_ref", aText = squareAbbr False abbreviation} ctx
     name = render sectionName ctx{inSectionTitle=True}
 
-writeFiguresFile :: PageStyle -> Draft -> IO ()
-writeFiguresFile sfs draft = writeSectionFile "fig" sfs "14882: Figures" $
+writeFiguresFile :: FilePath -> PageStyle -> Draft -> IO ()
+writeFiguresFile out sfs draft = writeSectionFile out "fig" sfs "14882: Figures" $
 	"<h1>Figures <a href='SectionToToc/fig' class='abbr_ref'>[fig]</a></h1>"
 	++ mconcat (uncurry r . figures draft)
 	where
@@ -170,8 +168,8 @@ writeFiguresFile sfs draft = writeSectionFile "fig" sfs "14882: Figures" $
 			renderFig True f ("./SectionToSection/" ++ urlChars figureAbbr) False True ctx
 			where ctx = defaultRenderContext{draft=draft, nearestEnclosing=Left p, page=FiguresPage}
 
-writeTablesFile :: PageStyle -> Draft -> IO ()
-writeTablesFile sfs draft = writeSectionFile "tab" sfs "14882: Tables" $
+writeTablesFile :: FilePath -> PageStyle -> Draft -> IO ()
+writeTablesFile out sfs draft = writeSectionFile out "tab" sfs "14882: Tables" $
 	"<h1>Tables <a href='SectionToToc/tab' class='abbr_ref'>[tab]</a></h1>"
 	++ mconcat (uncurry r . tables draft)
 	where
@@ -184,16 +182,16 @@ writeTablesFile sfs draft = writeSectionFile "tab" sfs "14882: Tables" $
 				page = TablesPage,
 				idPrefixes = [fromJust (Text.stripPrefix "tab:" tableAbbr) ++ "-"]}
 
-writeFootnotesFile :: PageStyle -> Draft -> IO ()
-writeFootnotesFile sfs draft = writeSectionFile "footnotes" sfs "14882: Footnotes" $
+writeFootnotesFile :: FilePath -> PageStyle -> Draft -> IO ()
+writeFootnotesFile out sfs draft = writeSectionFile out "footnotes" sfs "14882: Footnotes" $
 	"<h1>List of Footnotes</h1>"
 	++ mconcat (uncurry r . footnotes draft)
 	where
 		r :: Section -> Footnote -> TextBuilder.Builder
 		r s fn = render fn defaultRenderContext{draft=draft, nearestEnclosing = Right s, page=FootnotesPage}
 
-writeSingleSectionFile :: PageStyle -> Draft -> String -> IO ()
-writeSingleSectionFile sfs draft abbr = do
+writeSingleSectionFile :: FilePath -> PageStyle -> Draft -> String -> IO ()
+writeSingleSectionFile out sfs draft abbr = do
 	let
 	  Just section@Section{..} = Document.sectionByAbbr draft (Text.pack abbr)
 	  baseFilename = Text.unpack abbreviation
@@ -201,12 +199,12 @@ writeSingleSectionFile sfs draft abbr = do
 	  title
 	    | sectionKind == UnnumberedChapter = render sectionName ctx
 	    | otherwise = squareAbbr False abbreviation
-	writeSectionFile baseFilename sfs title $ mconcat $
+	writeSectionFile out baseFilename sfs title $ mconcat $
 	    fst . renderSection ctx (Just section) False . chapters draft
 	putStrLn $ "  " ++ baseFilename
 
-writeTableFiles :: PageStyle -> Draft -> IO ()
-writeTableFiles sfs draft =
+writeTableFiles :: FilePath -> PageStyle -> Draft -> IO ()
+writeTableFiles out sfs draft =
 	forM_ (snd . tables draft) $ \tab@Table{..} -> do
 		let
 			context = defaultRenderContext{draft=draft, page=TablePage tab, nearestEnclosing=Right tableSection}
@@ -214,11 +212,11 @@ writeTableFiles sfs draft =
 			header sec = sectionHeader 0 (min 4 $ 1 + length (parents sec)) sec "" anchor{aHref=href} context
 				where href="SectionToSection/" ++ urlChars (abbreviation sec) ++ "#" ++ urlChars tableAbbr
 			headers = mconcat $ map header $ reverse $ tableSection : parents tableSection
-		writeSectionFile (Text.unpack tableAbbr) sfs (TextBuilder.fromText $ "[" ++ tableAbbr ++ "]") $
+		writeSectionFile out (Text.unpack tableAbbr) sfs (TextBuilder.fromText $ "[" ++ tableAbbr ++ "]") $
 			headers ++ renderTab True tab "" True False context
 
-writeFigureFiles :: PageStyle -> Draft -> IO ()
-writeFigureFiles sfs draft =
+writeFigureFiles :: FilePath -> PageStyle -> Draft -> IO ()
+writeFigureFiles out sfs draft =
 	forM_ (snd . figures draft) $ \fig@Figure{..} -> do
 		let
 			context = defaultRenderContext{draft=draft, page=FigurePage fig, nearestEnclosing=Right figureSection}
@@ -226,13 +224,12 @@ writeFigureFiles sfs draft =
 			header sec = sectionHeader 0 (min 4 $ 1 + length (parents sec)) sec "" anchor{aHref=href} context
 				where href="SectionToSection/" ++ urlChars (abbreviation sec) ++ "#" ++ urlChars figureAbbr
 			headers = mconcat $ map header $ reverse $ figureSection : parents figureSection
-		writeSectionFile (Text.unpack figureAbbr) sfs (TextBuilder.fromText $ "[" ++ figureAbbr ++ "]") $
+		writeSectionFile out (Text.unpack figureAbbr) sfs (TextBuilder.fromText $ "[" ++ figureAbbr ++ "]") $
 			headers ++ renderFig True fig "" True False context
 
-writeSectionFiles :: PageStyle -> Draft -> [IO ()]
-writeSectionFiles sfs draft = flip map (zip names contents) $ \(n, content) -> do
-		when (sfs == InSubdir) $ createDirectoryIfMissing True (outputDir ++ n)
-		writeFile (pagePath n sfs) content
+writeSectionFiles :: FilePath -> PageStyle -> Draft -> [IO ()]
+writeSectionFiles out sfs draft = flip map (zip names contents) $ \(n, content) ->
+		writePage out n sfs content
 	where
 		secs = Document.sections draft
 		renSec section@Section{..} = (Text.unpack abbreviation, sectionFileContent sfs title body)
@@ -247,21 +244,18 @@ writeSectionFiles sfs draft = flip map (zip names contents) $ \(n, content) -> d
 		names = fst . files
 		contents = snd . files
 
-writeIndexFile :: PageStyle -> Draft -> String -> IndexTree -> IO ()
-writeIndexFile sfs draft cat index =
-	writeSectionFile cat sfs ("14882: " ++ indexCatName cat) $
+writeIndexFile :: FilePath -> PageStyle -> Draft -> String -> IndexTree -> IO ()
+writeIndexFile out sfs draft cat index =
+	writeSectionFile out cat sfs ("14882: " ++ indexCatName cat) $
 		h 1 (indexCatName cat) ++ renderIndex defaultRenderContext{page=IndexPage (Text.pack cat), draft=draft} index
 
-writeIndexFiles :: PageStyle -> Draft -> Index -> [IO ()]
-writeIndexFiles sfs draft index = flip map (Map.toList index) $ uncurry (writeIndexFile sfs draft) . first Text.unpack
-
-writeCssFile :: IO ()
-writeCssFile = readFile "14882.css" >>= writeFile (outputDir ++ "/14882.css") . Text.pack
+writeIndexFiles :: FilePath -> PageStyle -> Draft -> Index -> [IO ()]
+writeIndexFiles out sfs draft index = flip map (Map.toList index) $ uncurry (writeIndexFile out sfs draft) . first Text.unpack
 
 -- Deduplicated: xrefdelta.tex can list an entry twice, and two parallel writes to one file fail.
-writeXrefDeltaFiles :: PageStyle -> Draft -> [IO ()]
-writeXrefDeltaFiles sfs draft = flip map (Map.toList $ Map.fromList $ xrefDelta draft) $ \(from, to) ->
-	writeSectionFile (Text.unpack from) sfs (squareAbbr False from) $
+writeXrefDeltaFiles :: FilePath -> PageStyle -> Draft -> [IO ()]
+writeXrefDeltaFiles out sfs draft = flip map (Map.toList $ Map.fromList $ xrefDelta draft) $ \(from, to) ->
+	writeSectionFile out (Text.unpack from) sfs (squareAbbr False from) $
 		if to == []
 			then "Subclause " ++ squareAbbr False from ++ " was removed."
 			else "See " ++ intercalateBuilders ", " (flip render ctx . to) ++ "."

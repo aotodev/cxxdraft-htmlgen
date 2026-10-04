@@ -32,7 +32,10 @@ Usage
     cd cxxdraft-htmlgen
     cabal update
     cabal build
-    cabal run cxxdraft-htmlgen -- path/to/draft [sectionfilestyle]
+    cabal run cxxdraft-htmlgen -- [-o outdir] path/to/draft [sectionfilestyle]
+
+  Run it from the repository root, since it reads macros.tex and the
+  CSS files from there. Output goes to ./14882/ unless -o is given.
 
   On Arch Linux, also install ghc-static. The ghc package ships no
   static libraries.
@@ -72,7 +75,7 @@ Custom draft branch
 
 Output
 
-  The following will be created in ./14882/ :
+  The following will be created in the output directory:
 
   - index.html    A table of contents with links to...
 

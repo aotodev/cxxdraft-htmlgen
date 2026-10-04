@@ -10,7 +10,8 @@ import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Time.Clock (getCurrentTime, UTCTime)
 import Prelude hiding ((.), (++), writeFile)
 import LaTeXBase (LaTeXUnit(..))
-import Pages (Link(..), fileContent, applyPageStyle, PageStyle(..), outputDir, writePage)
+import Pages (Link(..), fileContent, applyPageStyle, PageStyle(..), writePage)
+import System.FilePath ((</>))
 import Render (secnum, linkToSection, RenderContext(..), render, defaultRenderContext, Page(..))
 import Util
 import Document (Section(..), Draft(..), SectionKind(..), indexCatName, showSectionKindInToc)
@@ -64,14 +65,14 @@ tocHeader date commitUrl =
 indices :: [Text]
 indices = ["generalindex", "grammarindex", "headerindex", "libraryindex", "conceptindex", "impldefindex"]
 
-writeTocFiles :: PageStyle -> Draft -> IO ()
-writeTocFiles sfs draft@Draft{..} = do
+writeTocFiles :: FilePath -> PageStyle -> Draft -> IO ()
+writeTocFiles out sfs draft@Draft{..} = do
 	date <- getCurrentTime
 	tocCss <- readFile "toc.css"
 	let
 	    descMeta = "<meta name='description' content='Browser-friendly rendering of a recent draft of the C++ standard'>"
 	    tocStyle = "<style>" ++ TextBuilder.fromString tocCss ++ "</style>"
-	writeFile (outputDir ++ "/index.html") $ applyPageStyle sfs $ LazyText.toStrict $ TextBuilder.toLazyText $
+	writeFile (out </> "index.html") $ applyPageStyle sfs $ LazyText.toStrict $ TextBuilder.toLazyText $
 		fileContent "" "Draft C++ Standard: Contents" (descMeta ++ tocStyle) $
 			"<h1 style='text-align:center; hyphens:none; margin: 1cm'>Working Draft<br>Programming Languages &mdash; C++</h1>" ++
 			xml "div" [("class", "tocHeader")] (TextBuilder.fromText $ tocHeader date commitUrl) ++
@@ -85,7 +86,7 @@ writeTocFiles sfs draft@Draft{..} = do
 	let
 	    fullTocStyle = "<style>" ++ TextBuilder.fromString fullTocCss ++ "</style>"
 	    pathHome = if sfs == InSubdir then "../" else ""
-	writePage "fulltoc" sfs $ applyPageStyle sfs $ LazyText.toStrict $ TextBuilder.toLazyText $
+	writePage out "fulltoc" sfs $ applyPageStyle sfs $ LazyText.toStrict $ TextBuilder.toLazyText $
 		fileContent pathHome "Draft C++ Standard: Contents" (descMeta ++ fullTocStyle) $
 			"<h1 style='text-align:center; hyphens:none; margin: 1cm'>Working Draft<br>Programming Languages &mdash; C++</h1>" ++
 			xml "div" [("class", "tocHeader")] (TextBuilder.fromText $ tocHeader date commitUrl) ++

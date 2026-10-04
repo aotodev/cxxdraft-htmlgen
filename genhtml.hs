@@ -11,26 +11,31 @@ import Data.Text.IO (readFile)
 import qualified Control.Monad.Parallel as ParallelMonad
 import Util hiding (readFile)
 import Toc (writeTocFiles)
-import Pages (outputDir, PageStyle(..))
+import Pages (PageStyle(..))
+import System.FilePath ((</>))
 import SectionPages
 
 data CmdLineArgs = CmdLineArgs
-	{ repo :: FilePath
+	{ outputDir :: FilePath
+	, repo :: FilePath
 	, sectionFileStyle :: PageStyle
 	, sectionToWrite :: Maybe String }
 
 readCmdLineArgs :: [String] -> CmdLineArgs
-readCmdLineArgs = \case
+readCmdLineArgs ("-o" : dir : args) = (readCmdLineArgs args){outputDir = dir}
+readCmdLineArgs args = case args of
 	[repo, read -> sectionFileStyle, sec] -> CmdLineArgs{sectionToWrite=Just sec, ..}
 	[repo, read -> sectionFileStyle] -> CmdLineArgs{sectionToWrite=Nothing,..}
 	[repo] -> CmdLineArgs{sectionFileStyle=WithExtension,sectionToWrite=Nothing,..}
-	_ -> error "param: path/to/repo"
+	_ -> error "usage: cxxdraft-htmlgen [-o outdir] path/to/draft [sectionfilestyle [section]]"
+	where outputDir = "14882"
 
 copyFileToDir :: FilePath -> FilePath -> IO ()
-copyFileToDir d f = copyFile f (d ++ "/" ++ f)
+copyFileToDir d f = copyFile f (d </> f)
 
 simpleFilesToCopy :: [FilePath]
 simpleFilesToCopy = [
+    "14882.css",
     "expanded.css",
     "colored.css",
     "normative-only.css",
@@ -51,20 +56,20 @@ main = do
 	createDirectoryIfMissing True outputDir
 	forM_ simpleFilesToCopy $ copyFileToDir outputDir
 	case sectionToWrite of
-		Just abbr -> writeSingleSectionFile sectionFileStyle draft abbr
+		Just abbr -> writeSingleSectionFile outputDir sectionFileStyle draft abbr
 		Nothing -> do
 			let acts =
-				[ writeTocFiles sectionFileStyle draft
-				, writeCssFile
-				, writeFiguresFile sectionFileStyle draft
-				, writeFigureFiles sectionFileStyle draft
-				, writeFootnotesFile sectionFileStyle draft
-				, writeTablesFile sectionFileStyle draft
-				, writeTableFiles sectionFileStyle draft
+				map (\w -> w outputDir sectionFileStyle draft)
+				[ writeTocFiles
+				, writeFiguresFile
+				, writeFigureFiles
+				, writeFootnotesFile
+				, writeTablesFile
+				, writeTableFiles
 				] ++
-				writeXrefDeltaFiles sectionFileStyle draft ++
-				writeIndexFiles sectionFileStyle draft index ++
-				writeSectionFiles sectionFileStyle draft
+				writeXrefDeltaFiles outputDir sectionFileStyle draft ++
+				writeIndexFiles outputDir sectionFileStyle draft index ++
+				writeSectionFiles outputDir sectionFileStyle draft
 
 			((), took) <- measure $ ParallelMonad.sequence_ acts
 			putStrLn $ "Wrote files to " ++ outputDir ++ " in " ++ show (took * 1000) ++ "ms."

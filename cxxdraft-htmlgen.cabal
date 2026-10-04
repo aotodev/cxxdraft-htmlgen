@@ -18,6 +18,7 @@ executable cxxdraft-htmlgen
                , text >=1.2
                , process >=1.1
                , directory >=1.2
+               , filepath
                , containers >=0.5
                , mtl >=2.2
                , time >=1.4
