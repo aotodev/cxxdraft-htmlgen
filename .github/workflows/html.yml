@@ -1,0 +1,84 @@
+name: html
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '*.hs'
+      - '*.cabal'
+      - '*.css'
+      - '*.png'
+      - macros.tex
+      - .github/workflows/html.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: html
+  cancel-in-progress: false
+
+env:
+  ASSET: cxxdraft-html.tar.xz
+  KEEP: 5
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: gen
+
+      - name: Clone draft
+        run: git clone --depth 1 https://github.com/cplusplus/draft.git draft
+
+      - name: Pick tag
+        id: tag
+        run: |
+          tag="html-$(git -C draft rev-parse --short=7 HEAD)-$(git -C gen rev-parse --short=7 HEAD)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.tag.outputs.exists != 'true'
+        run: sudo apt-get install -y --no-install-recommends graphviz
+
+      - if: steps.tag.outputs.exists != 'true'
+        id: haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6'
+
+      - if: steps.tag.outputs.exists != 'true'
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.haskell.outputs.cabal-store }}
+          key: cabal-${{ runner.os }}-ghc-9.6-${{ hashFiles('gen/*.cabal') }}
+
+      - name: Generate
+        if: steps.tag.outputs.exists != 'true'
+        working-directory: gen
+        run: |
+          cabal build
+          cabal run -v0 cxxdraft-htmlgen -- -o ../out ../draft
+          tar -C ../out -cJf "../$ASSET" .
+
+      - name: Release
+        if: steps.tag.outputs.exists != 'true'
+        run: |
+          draft=$(git -C draft rev-parse HEAD)
+          gh release create "${{ steps.tag.outputs.tag }}" "$ASSET" -R "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --latest \
+            --title "Draft $(date -u +%F) (${draft:0:7})" \
+            --notes "Draft: https://github.com/cplusplus/draft/commit/$draft"
+
+      - name: Prune
+        run: |
+          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[($ENV.KEEP | tonumber):] | .[].tagName' |
+            while read -r t; do gh release delete "$t" -R "$GITHUB_REPOSITORY" --cleanup-tag --yes; done
